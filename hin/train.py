@@ -24,7 +24,7 @@ from torch.utils.data import DataLoader
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from hin.data import TileDataset, class_pixel_counts, list_pairs
+from hin.data import TileDataset, class_pixel_counts, list_pairs, resolve_data_root
 from hin.labels import DEFAULT_BAD_BANDS, IGNORE_INDEX, class_name, num_classes
 from hin.metrics import ConfusionMatrix, format_per_class
 from hin.model import build_model
@@ -40,7 +40,8 @@ def make_scaler(enabled):
 
 def parse_args():
     p = argparse.ArgumentParser()
-    p.add_argument('--root', default='dataset2683')
+    p.add_argument('--root', default=None,
+                   help='数据根目录；不传则自动探测仓库内或仓库上一级的 dataset2683')
     p.add_argument('--out', default='runs/freenet_stage1')
     p.add_argument('--mode', choices=['closed', 'open'], default='open',
                    help='closed=31 类忽略标签 0；open=32 类，把有效但未标注的像元当作 other')
@@ -125,11 +126,13 @@ def main():
     n_cls = num_classes(args.mode)
     bad_bands = () if args.keep_bad_bands else DEFAULT_BAD_BANDS
 
-    pairs = list_pairs(args.root, args.split_file, args.limit, args.pick)
+    root = resolve_data_root(args.root)
+    print(f'数据根目录: {root}')
+    pairs = list_pairs(root, args.split_file, args.limit, args.pick)
     if not pairs:
-        raise RuntimeError(f'在 {args.root} 下没有找到影像/标签配对')
+        raise RuntimeError(f'在 {root} 下没有找到影像/标签配对')
     if args.val_split_file:
-        val_pairs = list_pairs(args.root, args.val_split_file)
+        val_pairs = list_pairs(root, args.val_split_file)
     else:
         val_pairs = pairs
         print('警告：没有给 --val-split-file，评估跑在训练瓦片上，只能用来做过拟合自检')

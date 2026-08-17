@@ -88,7 +88,9 @@ class HINTileLoader(DataLoader):
 
     def set_defalut(self):
         self.config.update(dict(
-            root='dataset2683',
+            # None = 自动探测：先找仓库内 dataset2683，再找仓库上一级
+            #（远程服务器 /root/autodl-tmp/{freenet1, dataset2683} 的布局）
+            root=None,
             split_file=None,
             limit=0,
             pick='head',

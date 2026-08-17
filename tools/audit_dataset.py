@@ -29,6 +29,19 @@ NAME_RE = re.compile(r'^(?P<line>.+?)_Sx_(?P<sx>\d+)_Sy_(?P<sy>\d+)_Ex_(?P<ex>\d
                      re.IGNORECASE)
 NUM_KNOWN_CLASSES = 31
 
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def resolve_root(root):
+    """本地数据在仓库内，远程服务器上是仓库的兄弟目录，按顺序探测。"""
+    if root:
+        return root
+    for cand in (os.path.join(_REPO_ROOT, 'dataset2683'),
+                 os.path.normpath(os.path.join(_REPO_ROOT, '..', 'dataset2683'))):
+        if os.path.isdir(os.path.join(cand, 'Train_Labels')):
+            return cand
+    raise FileNotFoundError('找不到 dataset2683，请用 --root 显式指定')
+
 
 def parse_name(path):
     m = NAME_RE.match(os.path.basename(path))
@@ -210,7 +223,8 @@ def run_pool(fn, items, workers, desc):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--root', default='dataset2683')
+    ap.add_argument('--root', default=None,
+                    help='数据根目录；不传则自动探测仓库内或仓库上一级的 dataset2683')
     ap.add_argument('--out', default='reports/audit')
     ap.add_argument('--workers', type=int, default=4)
     ap.add_argument('--stride', type=int, default=8,
@@ -224,10 +238,11 @@ def main():
     ap.add_argument('--skip-image-stats', action='store_true')
     args = ap.parse_args()
 
+    args.root = resolve_root(args.root)
     os.makedirs(args.out, exist_ok=True)
     report = {}
 
-    print('[1/6] 扫描文件')
+    print(f'[1/6] 扫描文件（数据根目录 {args.root}）')
     train_paths, test_paths, label_paths, image_dirs = scan_files(args.root)
     print(f'  训练影像 {len(train_paths)}  测试影像 {len(test_paths)}  标签 {len(label_paths)}')
 

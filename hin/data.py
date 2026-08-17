@@ -16,6 +16,29 @@ from tools.rawtiff import RawTiff, imread
 
 TILE_SIZE = 512
 
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+# 本地开发时数据在仓库里，远程服务器上数据是仓库的兄弟目录
+# （/root/autodl-tmp/{freenet1, dataset2683}），按顺序探测，两边免配置。
+DATA_ROOT_CANDIDATES = (
+    os.path.join(_REPO_ROOT, 'dataset2683'),
+    os.path.normpath(os.path.join(_REPO_ROOT, '..', 'dataset2683')),
+)
+
+
+def resolve_data_root(root=None):
+    """显式传入的路径优先；不传就在候选位置里找。"""
+    if root:
+        if not os.path.isdir(os.path.join(root, 'Train_Labels')):
+            raise FileNotFoundError(f'{root} 下没有 Train_Labels，不是数据根目录')
+        return root
+    for cand in DATA_ROOT_CANDIDATES:
+        if os.path.isdir(os.path.join(cand, 'Train_Labels')):
+            return cand
+    raise FileNotFoundError('找不到 dataset2683，候选位置：'
+                            + '，'.join(DATA_ROOT_CANDIDATES)
+                            + '。请用 root 参数显式指定。')
+
 
 def pick_diverse(names, labels, limit):
     """贪心集合覆盖：每次挑能新增最多类别的瓦片，平局时挑标注率高的。
@@ -41,8 +64,9 @@ def pick_diverse(names, labels, limit):
     return sorted(chosen)
 
 
-def list_pairs(root, split_file=None, limit=0, pick='head'):
-    """返回 [(image_path, label_path), ...]。"""
+def list_pairs(root=None, split_file=None, limit=0, pick='head'):
+    """返回 [(image_path, label_path), ...]。root 不传时自动探测数据位置。"""
+    root = resolve_data_root(root)
     label_dir = os.path.join(root, 'Train_Labels')
     labels = {n: os.path.join(label_dir, n)
               for n in sorted(os.listdir(label_dir)) if n.lower().endswith('.tif')}
@@ -76,8 +100,8 @@ def list_pairs(root, split_file=None, limit=0, pick='head'):
     return [(images[n], labels[n]) for n in names]
 
 
-def list_test_images(root):
-    test_dir = os.path.join(root, 'test')
+def list_test_images(root=None):
+    test_dir = os.path.join(resolve_data_root(root), 'test')
     return [os.path.join(test_dir, n) for n in sorted(os.listdir(test_dir))
             if n.lower().endswith('.tif')]
 

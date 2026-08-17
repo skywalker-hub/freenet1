@@ -8,7 +8,9 @@ IN_CHANNELS = 197
 NUM_CLASSES = 32
 
 _data_params = dict(
-    root='./dataset2683',
+    # None = 自动探测：仓库内 dataset2683 或仓库上一级的 dataset2683
+    #（远程服务器为 /root/autodl-tmp/dataset2683）。要指定别处就填绝对路径。
+    root=None,
     mode='open',
     crop=CROP,
     batch_size=BATCH_SIZE,
