@@ -39,10 +39,14 @@ if 'adamw' not in registry.OPT:
 EXTRA_VAL_KEYS = ('val_line',)
 
 
-def evaluate_one(self, dataloader, tag):
-    model = self._model.module if hasattr(self._model, 'module') else self._model
+def model_of(launcher):
+    model = launcher._model.module if hasattr(launcher._model, 'module') else launcher._model
     n_cls = model.config.num_classes
-    mode = 'open' if n_cls == 32 else 'closed'
+    return model, n_cls, 'open' if n_cls == 32 else 'closed'
+
+
+def run_inference(self, dataloader):
+    model, n_cls, _ = model_of(self)
     device = next(model.parameters()).device
 
     self._model.eval()
@@ -62,7 +66,11 @@ def evaluate_one(self, dataloader, tag):
     self._model.train()
 
     speed(self._logger, round(total_time / max(len(dataloader), 1), 3), 'im (avg)')
+    return cm
 
+
+def log_metrics(self, cm, tag):
+    _, n_cls, mode = model_of(self)
     res = cm.compute()
     names = [class_name(mode, i) for i in range(n_cls)]
     self._logger.info(f'[{tag}]\n'
@@ -75,15 +83,46 @@ def evaluate_one(self, dataloader, tag):
         f'{tag}/num_present_classes': float(res['num_present_classes']),
         f'{tag}/F1': res['f1'],
     }, step=self.checkpoint.global_step)
+    return res
+
+
+def log_domain_gap(self, results, min_support=1000):
+    """在两边共有的类别上重算 macro-F1，这样域偏移的差值才有意义。
+
+    各自的 macro_F1_present 不可比：分母是各自出现过的类别集，indomain 有 27 类
+    而 val_line 只有 18 类，类别集不同就不是同一把尺子。取交集重算才是同一把。
+    support 太小的类别也排除掉——val_line 里 Barren 只有 144 个像元，它的 F1
+    是采样噪声，不是域偏移。
+    """
+    common = None
+    for _, res in results:
+        enough = res['support'] >= min_support
+        common = enough if common is None else (common & enough)
+    if common is None or not common.any():
+        return
+
+    self._logger.info(f'[common] {int(common.sum())} 个两边 support 都 >= {min_support} 的类别')
+    self._logger.eval_log(
+        metric_dict={f'common/{tag}_macro_F1': float(res['f1'][common].mean())
+                     for tag, res in results},
+        step=self.checkpoint.global_step)
 
 
 def make_evaluate_fn(extra_loaders):
     def hin_evaluate_fn(self, test_dataloader, config):
         if self.checkpoint.global_step < 0:
             return
-        evaluate_one(self, test_dataloader, 'indomain')
+        mats = [('indomain', run_inference(self, test_dataloader))]
         for tag, loader in extra_loaders:
-            evaluate_one(self, loader, tag)
+            mats.append((tag, run_inference(self, loader)))
+
+        results = [(tag, log_metrics(self, cm, tag)) for tag, cm in mats]
+        if len(mats) > 1:
+            # combined 是最接近线上分数的本地读数：单个验证集缺 5-14 个类，
+            # 那些类在 macro_F1_all 里按 0 计入分母，分数被结构性压低；
+            # 合起来覆盖 30/32 类，上限从 0.56 抬到 0.94，才好跟排行榜比。
+            log_metrics(self, ConfusionMatrix.merge([cm for _, cm in mats]), 'combined')
+            log_domain_gap(self, results)
 
     return hin_evaluate_fn
 

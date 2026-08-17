@@ -14,6 +14,18 @@ class ConfusionMatrix:
         self.num_classes = num_classes
         self.mat = torch.zeros(num_classes, num_classes, dtype=torch.int64, device=device)
 
+    @classmethod
+    def merge(cls, matrices):
+        """把多个验证集的统计合成一个。
+
+        各验证集单独看都缺类，缺的还不是同一批；合起来算 macro_F1_all，
+        分母里的零类少了，才谈得上跟官方 179 张全类别测试集的分数对比。
+        """
+        out = cls(matrices[0].num_classes, device=matrices[0].mat.device)
+        for m in matrices:
+            out.mat += m.mat.to(out.mat.device)
+        return out
+
     def update(self, target, pred, ignore_index=255):
         keep = target != ignore_index
         if not keep.any():
