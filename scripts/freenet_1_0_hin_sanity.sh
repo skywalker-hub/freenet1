@@ -2,6 +2,9 @@
 # 链路自检：用 4 张覆盖类别最多的瓦片过拟合。
 # 判据是 macro_F1_present 能冲到很高；冲不上去说明数据/标签/损失/指标里有 bug，
 # 别急着往全量跑。macro_F1_all 这时必然低，因为另外十几个类不在这 4 张图里。
+#
+# 这里评的是训练用的同一批瓦片（--single-val 跳过留出航线验证集），
+# 所以分数只说明"能不能学会"，跟泛化无关。
 
 export CUDA_VISIBLE_DEVICES=0
 export OMP_NUM_THREADS=4
@@ -12,10 +15,12 @@ model_dir='./log/hin/sanity'
 python train_hin.py \
     --config_path=${config_path} \
     --model_dir=${model_dir} \
+    --single-val \
     data.train.params.limit 4 \
     data.train.params.pick "'diverse'" \
     data.train.params.batch_size 2 \
     data.train.params.class_weight "'none'" \
+    data.test.params.split_file "'./splits/train.json'" \
     data.test.params.limit 4 \
     data.test.params.pick "'diverse'" \
     train.num_iters 300 \

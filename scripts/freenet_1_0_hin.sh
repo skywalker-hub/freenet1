@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# 全量训练。注意此时 data.test 还指向训练瓦片，评估分数只是过拟合自检，
-# 不能当泛化指标——等场景划分做出来之后把 split_file 指过去。
+# 全量训练。每 20 个 epoch 在两个验证集上各评一次：
+# indomain（航线见过、瓦片没见过）和 val_line（整条航线没见过）。
+# 先跑 tools/make_splits.py 生成 splits/。
 
 export CUDA_VISIBLE_DEVICES=0
 export OMP_NUM_THREADS=4

@@ -40,16 +40,26 @@ config = dict(
         train=dict(
             type='HINTileLoader',
             params=dict(training=True,
-                        split_file=None,
+                        split_file='./splits/train.json',
                         class_weight='inv_sqrt',
                         **_data_params)
         ),
-        # 还没有做场景划分，先指到训练瓦片上，这个分数只能当过拟合自检。
-        # 有了 split 文件之后把 split_file 指过去，并保持 class_weight='none'。
+        # 两个验证集，由 tools/make_splits.py 生成，都与训练瓦片空间零重叠。
+        # test 是 SimpleCV 认的键，装同域验证集（航线训练时见过，瓦片没见过）；
+        # val_line 由 train_hin.py 额外加载，整条航线都没参与训练。
+        # 前者对应测试集里与训练重叠的那 41 张，后者对应没见过的 18 条航线，
+        # 两者之差就是域偏移的代价。
         test=dict(
             type='HINTileLoader',
             params=dict(training=False,
-                        split_file=None,
+                        split_file='./splits/val_indomain.json',
+                        class_weight='none',
+                        **_data_params)
+        ),
+        val_line=dict(
+            type='HINTileLoader',
+            params=dict(training=False,
+                        split_file='./splits/val_line.json',
                         class_weight='none',
                         **_data_params)
         )
@@ -72,8 +82,8 @@ config = dict(
         forward_times=1,
         num_iters=NUM_ITERS,
         eval_per_epoch=True,
-        # 一个 epoch 约 383/BATCH_SIZE = 191 步，20000 步约 105 个 epoch。
-        # 评估要在完整瓦片上跑，每张读 112MB，所以别评得太勤。
+        # 一个 epoch 约 281/BATCH_SIZE = 141 步，20000 步约 142 个 epoch。
+        # 两个验证集共 102 张完整瓦片，每张读 112MB，一次评估约 2 分钟，别评得太勤。
         eval_interval_epoch=20,
         save_ckpt_interval_epoch=10,
         summary_grads=False,
