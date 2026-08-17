@@ -1,6 +1,11 @@
 NUM_ITERS = 20000
-CROP = 256
-BATCH_SIZE = 4
+# 整幅瓦片进网络，不做随机裁剪。裁到 256 的话，y0/x0 均匀采样会让覆盖概率呈三角形
+# 分布：中心像元每个 epoch 有 99% 概率被采到，四角只有 0.0015%，而评估和提交都是在
+# 完整 512 上做的。整图训练消除这个错配，也回到 FreeNet 不做 patch 训练的原意。
+CROP = 512
+# 512 分辨率下单样本激活约 1.5 GiB（fp32），batch 2 约需 4-6 GiB 显存。
+# OOM 就降到 1，同时把 NUM_ITERS 翻倍以保持相同的数据遍历量。
+BATCH_SIZE = 2
 
 # 224 波段减去 tools/audit_dataset.py 认定的 27 个低质量波段
 IN_CHANNELS = 197
@@ -67,8 +72,8 @@ config = dict(
         forward_times=1,
         num_iters=NUM_ITERS,
         eval_per_epoch=True,
-        # 一个 epoch 约 383/BATCH_SIZE 步；评估要在完整 512x512 瓦片上跑，
-        # 每张读 112MB，所以别评得太勤
+        # 一个 epoch 约 383/BATCH_SIZE = 191 步，20000 步约 105 个 epoch。
+        # 评估要在完整瓦片上跑，每张读 112MB，所以别评得太勤。
         eval_interval_epoch=20,
         save_ckpt_interval_epoch=10,
         summary_grads=False,

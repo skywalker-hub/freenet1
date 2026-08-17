@@ -130,21 +130,56 @@ def map_labels(raw, valid, mode):
     return target
 
 
-def normalize_per_sample(image, valid):
-    """按本样本自身的有效像元做逐波段标准化，nodata 归零。
+def band_runs(bad_bands):
+    """把要保留的波段压成若干连续区间，返回 (区间元组, 波段数)。
 
-    这是第一阶段的简化做法。辐亮度数据跨航线亮度差可达 15 倍，用全局统计量会把
-    "这张图偏亮" 当成类别线索；等基线跑通后再对比 per-line / 光谱归一化等方案。
+    坏波段是三段连续的水汽吸收/噪声窗口，所以保留的也是连续区间。按区间切片拷贝
+    比 fancy indexing 快得多，还能顺带完成 float32 转换。
     """
-    out = image.astype(np.float32, copy=True)
-    if valid.any():
-        v = out[valid]
-        mean = v.mean(axis=0)
-        std = v.std(axis=0)
-        out -= mean
-        out /= np.maximum(std, 1e-3)
+    bad = set(bad_bands or ())
+    keep = [b for b in range(224) if b not in bad]
+    if not keep:
+        raise ValueError('bad_bands 把 224 个波段全排除了')
+    runs, start = [], keep[0]
+    for prev, cur in zip(keep, keep[1:]):
+        if cur != prev + 1:
+            runs.append((start, prev + 1))
+            start = cur
+    runs.append((start, keep[-1] + 1))
+    return tuple(runs), len(keep)
+
+
+def preprocess(raw, runs, n_keep):
+    """挑波段 + 按本样本自身的有效像元做逐波段标准化，nodata 归零。
+
+    辐亮度数据跨航线亮度差可达 15 倍，用全局统计量会把 "这张图偏亮" 当成类别
+    线索，所以统计量只取自本样本。这是第一阶段的简化做法，等基线跑通后再对比
+    per-line / 光谱归一化等方案。
+
+    训练和推理必须走同一个函数，否则预处理对不上，线上分数会莫名低于本地。
+    """
+    out = np.empty(raw.shape[:2] + (n_keep,), dtype=np.float32)
+    offset = 0
+    for start, stop in runs:
+        width = stop - start
+        out[:, :, offset:offset + width] = raw[:, :, start:stop]
+        offset += width
+
+    valid = out.any(axis=2)
+    n = int(valid.sum())
+    if n == 0:
+        out[:] = 0.0
+        return out, valid
+
+    # nodata 像元全波段为 0，整幅求和就等于有效像元求和，不必物化布尔掩膜的副本
+    mean = out.sum(axis=(0, 1), dtype=np.float64) / n
+    out -= mean.astype(np.float32)
+    # 先把 nodata 归零再平方，平方和里就不含它们的贡献。反过来先平方再解析扣除的话，
+    # 扣除项会比真正的平方和还大，抵消误差能到 0.04 个标准差。
     out[~valid] = 0.0
-    return out
+    sq = np.einsum('ijk,ijk->k', out, out, dtype=np.float64)
+    out /= np.maximum(np.sqrt(sq / n), 1e-3).astype(np.float32)
+    return out, valid
 
 
 class TileDataset(Dataset):
@@ -158,15 +193,11 @@ class TileDataset(Dataset):
         self.training = training
         self.seed = seed
         self._rs = None
-
-        keep = np.ones(224, dtype=bool)
-        if bad_bands:
-            keep[list(bad_bands)] = False
-        self.keep_bands = np.where(keep)[0]
+        self.band_runs, self._n_keep = band_runs(bad_bands)
 
     @property
     def in_channels(self):
-        return len(self.keep_bands)
+        return self._n_keep
 
     def __len__(self):
         return len(self.pairs)
@@ -195,12 +226,10 @@ class TileDataset(Dataset):
         x0 = rng.randint(0, tif.width - crop + 1) if self.training else 0
 
         # 只读裁剪块覆盖到的字节，避免每个样本都把 112MB 全部读进来
-        image = tif.read(y0, y0 + crop, x0, x0 + crop)
-        image = image[:, :, self.keep_bands]
+        raw = tif.read(y0, y0 + crop, x0, x0 + crop)
         label = imread(label_path)[y0:y0 + crop, x0:x0 + crop]
 
-        valid = image.any(axis=2)
-        image = normalize_per_sample(image, valid)
+        image, valid = preprocess(raw, self.band_runs, self._n_keep)
         target = map_labels(label, valid, self.mode)
 
         if self.training:

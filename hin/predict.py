@@ -10,7 +10,7 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset
 
-from hin.data import normalize_per_sample
+from hin.data import band_runs, preprocess
 from hin.labels import DEFAULT_BAD_BANDS, target_index_to_submission_id
 from tools.rawtiff import RawTiff
 
@@ -24,23 +24,18 @@ class ImageDataset(Dataset):
 
     def __init__(self, paths, bad_bands=DEFAULT_BAD_BANDS):
         self.paths = list(paths)
-        keep = np.ones(224, dtype=bool)
-        if bad_bands:
-            keep[list(bad_bands)] = False
-        self.keep_bands = np.where(keep)[0]
+        self.band_runs, self._n_keep = band_runs(bad_bands)
 
     @property
     def in_channels(self):
-        return len(self.keep_bands)
+        return self._n_keep
 
     def __len__(self):
         return len(self.paths)
 
     def __getitem__(self, idx):
         path = self.paths[idx]
-        image = RawTiff(path).read()[:, :, self.keep_bands]
-        valid = image.any(axis=2)
-        image = normalize_per_sample(image, valid)
+        image, valid = preprocess(RawTiff(path).read(), self.band_runs, self._n_keep)
         image = torch.from_numpy(np.ascontiguousarray(image.transpose(2, 0, 1)))
         return image, torch.from_numpy(valid), os.path.basename(path)
 
