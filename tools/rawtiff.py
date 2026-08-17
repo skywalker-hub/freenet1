@@ -188,17 +188,16 @@ def imread(path, squeeze_single_band=True):
 
 # 提交文件必须是无压缩 TIFF。CodaLab 评测端的 tifffile 没有 imagecodecs，
 # LZW（压缩码 5）会直接读失败，日志表现为「没有匹配到影像」。
+# 条带切法跟官方 Train_Labels 一致：RowsPerStrip=4，128 条连续带，IFD 在文件头。
 _SAMPLE_FORMAT = {'u': 1, 'i': 2, 'f': 3}
 _GDAL_NODATA = 42113
+_ROWS_PER_STRIP = 4
 
 
-def _ifd_payload(dtype, count, value):
-    """把 tag 的值填进 IFD 条目末尾 4 字节。count*size 必须 <= 4。"""
+def _inline(dtype, value):
+    """IFD 条目末尾 4 字节：SHORT 占低半，LONG 占满，ASCII 左对齐。"""
     if isinstance(value, (bytes, bytearray)):
-        raw = bytes(value)
-        if len(raw) > 4:
-            raise ValueError('IFD inline value longer than 4 bytes')
-        return raw.ljust(4, b'\x00')
+        return bytes(value).ljust(4, b'\x00')[:4]
     if dtype == 3:
         return struct.pack('<HH', int(value), 0)
     if dtype == 4:
@@ -209,8 +208,8 @@ def _ifd_payload(dtype, count, value):
 def imwrite(path, array):
     """写一幅单波段无压缩 TIFF，(H, W) 二维数组。
 
-    布局跟官方 Train_Labels 一致：IFD 紧挨 8 字节文件头，像素数据在 IFD 之后，
-    Compression=1（无压缩）。不要改成 LZW——评测端 tifffile 没有 imagecodecs。
+    布局模仿官方 Train_Labels / GDAL：IFD 在偏移 8，RowsPerStrip=4，
+    Compression=1。评测端 tifffile 没有 imagecodecs，禁止写成 LZW。
     """
     array = np.asarray(array)
     if array.ndim != 2:
@@ -218,42 +217,47 @@ def imwrite(path, array):
     kind = _SAMPLE_FORMAT.get(array.dtype.kind)
     if kind is None or array.dtype.itemsize not in (1, 2, 4, 8):
         raise ValueError(f'unsupported dtype {array.dtype}')
-    if array.shape[0] > 65535:
-        raise ValueError(f'height {array.shape[0]} 超出 SHORT RowsPerStrip 范围')
 
     array = np.ascontiguousarray(array, dtype=array.dtype.newbyteorder('<'))
     height, width = array.shape
-    data = array.tobytes()
+    rps = _ROWS_PER_STRIP if height % _ROWS_PER_STRIP == 0 else height
+    n_strips = height // rps
+    strip_bytes = rps * width * array.dtype.itemsize
+    if strip_bytes > 65535:
+        raise ValueError(f'strip 太大 ({strip_bytes})，无法用 SHORT StripByteCounts')
 
     n_tags = 12
-    ifd_offset = 8
     ifd_size = 2 + 12 * n_tags + 4
-    data_offset = ifd_offset + ifd_size
+    extra_start = 8 + ifd_size
+    offsets_ptr = extra_start
+    counts_ptr = offsets_ptr + 4 * n_strips
+    data_offset = counts_ptr + 2 * n_strips
+    strip_offsets = [data_offset + i * strip_bytes for i in range(n_strips)]
 
-    tags = [
-        (TAG_IMAGE_WIDTH, 3, 1, width),
-        (TAG_IMAGE_LENGTH, 3, 1, height),
-        (TAG_BITS_PER_SAMPLE, 3, 1, array.dtype.itemsize * 8),
-        (TAG_COMPRESSION, 3, 1, 1),          # 1 = 无压缩，禁止改成 5 (LZW)
-        (262, 3, 1, 1),                      # PhotometricInterpretation = BlackIsZero
-        (TAG_STRIP_OFFSETS, 4, 1, data_offset),
-        (TAG_SAMPLES_PER_PIXEL, 3, 1, 1),
-        (TAG_ROWS_PER_STRIP, 3, 1, height),  # 官方标签用 SHORT
-        (TAG_STRIP_BYTE_COUNTS, 4, 1, len(data)),
-        (TAG_PLANAR_CONFIG, 3, 1, 1),
-        (TAG_SAMPLE_FORMAT, 3, 1, kind),
-        (_GDAL_NODATA, 2, 2, b'0\x00'),      # 与官方标签一致，nodata = "0"
+    def entry(tag, dtype, count, payload):
+        return struct.pack('<HHI', tag, dtype, count) + payload
+
+    # IFD 条目必须按 tag 号升序
+    entries = [
+        entry(TAG_IMAGE_WIDTH, 3, 1, _inline(3, width)),
+        entry(TAG_IMAGE_LENGTH, 3, 1, _inline(3, height)),
+        entry(TAG_BITS_PER_SAMPLE, 3, 1, _inline(3, array.dtype.itemsize * 8)),
+        entry(TAG_COMPRESSION, 3, 1, _inline(3, 1)),
+        entry(262, 3, 1, _inline(3, 1)),
+        entry(TAG_STRIP_OFFSETS, 4, n_strips, _inline(4, offsets_ptr)),
+        entry(TAG_SAMPLES_PER_PIXEL, 3, 1, _inline(3, 1)),
+        entry(TAG_ROWS_PER_STRIP, 3, 1, _inline(3, rps)),
+        entry(TAG_STRIP_BYTE_COUNTS, 3, n_strips, _inline(4, counts_ptr)),
+        entry(TAG_PLANAR_CONFIG, 3, 1, _inline(3, 1)),
+        entry(TAG_SAMPLE_FORMAT, 3, 1, _inline(3, kind)),
+        entry(_GDAL_NODATA, 2, 2, _inline(2, b'0\x00')),
     ]
 
-    body = struct.pack('<H', n_tags)
-    for tag, dtype, count, value in sorted(tags):
-        body += struct.pack('<HHI', tag, dtype, count)
-        body += _ifd_payload(dtype, count, value)
-    body += struct.pack('<I', 0)
-    if len(body) != ifd_size:
-        raise RuntimeError(f'IFD 大小 {len(body)}，预期 {ifd_size}')
-
     with open(path, 'wb') as fh:
-        fh.write(struct.pack('<2sHI', b'II', 42, ifd_offset))
-        fh.write(body)
-        fh.write(data)
+        fh.write(struct.pack('<2sHI', b'II', 42, 8))
+        fh.write(struct.pack('<H', n_tags))
+        fh.write(b''.join(entries))
+        fh.write(struct.pack('<I', 0))
+        fh.write(struct.pack('<' + 'I' * n_strips, *strip_offsets))
+        fh.write(struct.pack('<' + 'H' * n_strips, *([strip_bytes] * n_strips)))
+        fh.write(array.tobytes())

@@ -166,15 +166,20 @@ def verify(written, paths, dtype):
             raise RuntimeError(f'{name} dtype 是 {arr.dtype}，应为 {np.dtype(dtype)}')
         if arr.min() < 0 or arr.max() > 32:
             raise RuntimeError(f'{name} 取值超出 0..32：[{arr.min()}, {arr.max()}]')
-        compression = RawTiff(path).compression
+        tif = RawTiff(path)
+        compression = tif.compression
         if compression != 1:
             raise RuntimeError(
                 f'{name} TIFF 压缩码是 {compression}，必须是 1（无压缩）。'
                 f'CodaLab 的 tifffile 没有 imagecodecs，LZW 会读失败')
+        if tif.rows_per_strip != 4:
+            raise RuntimeError(
+                f'{name} RowsPerStrip={tif.rows_per_strip}，应为 4（与官方标签一致）')
         hist += np.bincount(arr.ravel().astype(np.int64), minlength=33)
     used = [c for c in range(1, 33) if hist[c]]
     total = hist[1:].sum()
-    print(f'\n自检通过：{len(written)} 张 512x512 {np.dtype(dtype)} 无压缩 TIFF，取值合法')
+    print(f'\n自检通过：{len(written)} 张 512x512 {np.dtype(dtype)} '
+          f'无压缩 TIFF（RowsPerStrip=4），取值合法')
     print(f'  预测里出现了 {len(used)} 个类别：{used}')
     print(f'  nodata(0) 占 {hist[0] / hist.sum():.1%}，Unknown(32) 占有效像元的 '
           f'{hist[32] / max(total, 1):.1%}')
