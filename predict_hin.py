@@ -22,7 +22,7 @@ import torch
 from simplecv.module.model_builder import make_model
 from simplecv.util.config import import_config
 
-from hin.data import list_pairs, resolve_data_root
+from hin.data import find_tifs, list_pairs, resolve_data_root
 from hin.labels import DEFAULT_BAD_BANDS
 from hin.predict import TTA_CHOICES, ImageDataset, predict_prob, prob_to_submission
 from hin.score import format_report, score_arrays, train_label_to_gt
@@ -102,19 +102,19 @@ def main():
     root = resolve_data_root(test_params.get('root'))
     if args.split_file:
         # 训练影像分散在 Train_Images01..05，交给 list_pairs 去配对
+        source = args.split_file
         pairs = list_pairs(root, args.split_file)
         paths = [image for image, _ in pairs]
         gt_map = {os.path.basename(image): label for image, label in pairs}
         gt_is_train_label = not args.gt_raw
     else:
-        image_dir = args.image_dir or os.path.join(root, 'test')
-        paths = [os.path.join(image_dir, n) for n in sorted(os.listdir(image_dir))
-                 if n.lower().endswith(('.tif', '.tiff'))]
+        source = args.image_dir or os.path.join(root, 'test')
+        paths = find_tifs(source)
         gt_map = {os.path.basename(p): os.path.join(args.gt_dir, os.path.basename(p))
                   for p in paths} if args.gt_dir else {}
         gt_is_train_label = args.gt_is_train_label
     if not paths:
-        raise FileNotFoundError('没有找到待推理的 TIF')
+        raise FileNotFoundError(f'{source} 里没有找到待推理的 TIF（子目录也找过了）')
     if args.limit:
         paths = paths[:args.limit]
 

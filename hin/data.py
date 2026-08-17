@@ -40,6 +40,28 @@ def resolve_data_root(root=None):
                             + '。请用 root 参数显式指定。')
 
 
+def find_tifs(directory):
+    """递归收集目录下的 TIF，按文件名排序。
+
+    解压方式不同会导致层级不同——测试集可能是 test/*.tif，也可能是
+    test/Test_Images/*.tif——递归查找可以两种都认。返回顺序只看文件名，
+    不受目录层级影响，这样推理顺序在不同机器上一致。
+    """
+    if not os.path.isdir(directory):
+        raise FileNotFoundError(f'{directory} 不是目录')
+    found = {}
+    for current, _dirs, files in os.walk(directory):
+        for name in files:
+            if not name.lower().endswith(('.tif', '.tiff')):
+                continue
+            path = os.path.join(current, name)
+            if name in found:
+                raise RuntimeError(f'{directory} 下有重名 TIF，无法确定用哪个：\n'
+                                   f'  {found[name]}\n  {path}')
+            found[name] = path
+    return [found[n] for n in sorted(found)]
+
+
 def pick_diverse(names, labels, limit):
     """贪心集合覆盖：每次挑能新增最多类别的瓦片，平局时挑标注率高的。
 
@@ -67,20 +89,14 @@ def pick_diverse(names, labels, limit):
 def list_pairs(root=None, split_file=None, limit=0, pick='head'):
     """返回 [(image_path, label_path), ...]。root 不传时自动探测数据位置。"""
     root = resolve_data_root(root)
-    label_dir = os.path.join(root, 'Train_Labels')
-    labels = {n: os.path.join(label_dir, n)
-              for n in sorted(os.listdir(label_dir)) if n.lower().endswith('.tif')}
+    labels = {os.path.basename(p): p for p in find_tifs(os.path.join(root, 'Train_Labels'))}
 
     images = {}
     for d in sorted(os.listdir(root)):
-        if not d.lower().startswith('train_images'):
-            continue
         sub = os.path.join(root, d)
-        if not os.path.isdir(sub):
+        if not d.lower().startswith('train_images') or not os.path.isdir(sub):
             continue
-        for n in sorted(os.listdir(sub)):
-            if n.lower().endswith('.tif'):
-                images[n] = os.path.join(sub, n)
+        images.update({os.path.basename(p): p for p in find_tifs(sub)})
 
     names = sorted(set(images) & set(labels))
     if split_file:
@@ -101,9 +117,7 @@ def list_pairs(root=None, split_file=None, limit=0, pick='head'):
 
 
 def list_test_images(root=None):
-    test_dir = os.path.join(resolve_data_root(root), 'test')
-    return [os.path.join(test_dir, n) for n in sorted(os.listdir(test_dir))
-            if n.lower().endswith('.tif')]
+    return find_tifs(os.path.join(resolve_data_root(root), 'test'))
 
 
 def map_labels(raw, valid, mode):

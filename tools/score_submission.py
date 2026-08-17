@@ -12,6 +12,7 @@ import os
 import tempfile
 import zipfile
 
+from hin.data import find_tifs
 from hin.score import format_report, score_arrays, train_label_to_gt
 from tools.rawtiff import RawTiff, imread
 
@@ -19,8 +20,7 @@ from tools.rawtiff import RawTiff, imread
 def collect(pred, workdir):
     """返回 {文件名: 路径}。pred 是 ZIP 时先解开并检查有无子目录。"""
     if os.path.isdir(pred):
-        return {n: os.path.join(pred, n) for n in sorted(os.listdir(pred))
-                if n.lower().endswith(('.tif', '.tiff'))}
+        return {os.path.basename(p): p for p in find_tifs(pred)}
     if not zipfile.is_zipfile(pred):
         raise ValueError(f'{pred} 既不是目录也不是 ZIP')
     with zipfile.ZipFile(pred) as zf:
@@ -38,9 +38,13 @@ def main():
     p.add_argument('--pred', required=True, help='预测目录或提交 ZIP')
     p.add_argument('--gt', required=True, help='真值标签目录')
     p.add_argument('--images', default=None,
-                   help='真值来自 Train_Labels 时给影像目录：据此区分 nodata 与'
-                        '有效未标注像元，把后者按 32(Unknown) 计分')
+                   help='真值来自 Train_Labels 时给影像目录（可以直接给 dataset2683，'
+                        '会递归查找）：据此区分 nodata 与有效未标注像元，'
+                        '把后者按 32(Unknown) 计分')
     args = p.parse_args()
+
+    gts = {os.path.basename(p): p for p in find_tifs(args.gt)}
+    images = {os.path.basename(p): p for p in find_tifs(args.images)} if args.images else {}
 
     with tempfile.TemporaryDirectory() as workdir:
         preds = collect(args.pred, workdir)
@@ -49,13 +53,12 @@ def main():
 
         pairs, missing = [], []
         for name, path in preds.items():
-            gt_path = os.path.join(args.gt, name)
-            if not os.path.isfile(gt_path):
+            if name not in gts:
                 missing.append(name)
                 continue
-            gt = imread(gt_path)
+            gt = imread(gts[name])
             if args.images:
-                valid = RawTiff(os.path.join(args.images, name)).read().any(axis=2)
+                valid = RawTiff(images[name]).read().any(axis=2)
                 gt = train_label_to_gt(gt, valid)
             pairs.append((gt, imread(path)))
 
