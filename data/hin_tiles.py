@@ -75,15 +75,20 @@ class HINTileLoader(DataLoader):
         dataset = HINTileDataset(pairs, self.mode, self.crop, self.training,
                                  bad_bands, self.seed, class_weight)
 
+        workers = min(self.num_workers, len(pairs))
         super(HINTileLoader, self).__init__(
             dataset,
             batch_size=self.batch_size if self.training else 1,
             shuffle=self.training,
-            num_workers=min(self.num_workers, len(pairs)),
+            num_workers=workers,
             pin_memory=True,
             drop_last=self.training and len(pairs) > self.batch_size,
             timeout=0,
             worker_init_fn=None,
+            # SimpleCV 的 Iterator 每个 epoch 都会重建 iter()。不开 persistent_workers
+            # 的话 worker 进程会跟着反复销毁重建；瓦片少的时候一个 epoch 才几步，
+            # 进程启动开销会盖过真正的读盘时间。
+            persistent_workers=workers > 0,
         )
 
     def set_defalut(self):

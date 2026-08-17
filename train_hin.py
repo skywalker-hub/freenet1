@@ -21,7 +21,7 @@ from simplecv.util import registry
 from simplecv.util.logger import eval_progress, speed
 
 from data import hin_tiles  # noqa: F401  导入即注册 HINTileLoader
-from hin.labels import IGNORE_INDEX, class_name
+from hin.labels import IGNORE_INDEX, class_name, target_index_to_submission_id
 from hin.metrics import ConfusionMatrix, format_per_class
 from module import freenet_hin  # noqa: F401  导入即注册 FreeNetHIN
 
@@ -59,7 +59,7 @@ def hin_evaluate_fn(self, test_dataloader, config):
 
     res = cm.compute()
     names = [class_name(mode, i) for i in range(n_cls)]
-    self._logger.info('\n' + format_per_class(res, names))
+    self._logger.info('\n' + format_per_class(res, names, target_index_to_submission_id(mode)))
 
     metric_dict = {
         'OA': float(res['oa']),

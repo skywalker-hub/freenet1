@@ -180,8 +180,8 @@ class TileDataset(Dataset):
         y0 = rng.randint(0, tif.height - crop + 1) if self.training else 0
         x0 = rng.randint(0, tif.width - crop + 1) if self.training else 0
 
-        # 只读裁剪覆盖到的行，避免每个样本都把 112MB 全部读进来
-        image = tif.read(y0, y0 + crop)[:, x0:x0 + crop, :]
+        # 只读裁剪块覆盖到的字节，避免每个样本都把 112MB 全部读进来
+        image = tif.read(y0, y0 + crop, x0, x0 + crop)
         image = image[:, :, self.keep_bands]
         label = imread(label_path)[y0:y0 + crop, x0:x0 + crop]
 

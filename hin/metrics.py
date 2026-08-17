@@ -49,10 +49,13 @@ class ConfusionMatrix:
         )
 
 
-def format_per_class(result, names):
-    lines = [f'{"id":>3} {"class":<20} {"support":>12} {"P":>7} {"R":>7} {"F1":>7}']
+def format_per_class(result, names, ids=None):
+    """ids 是提交文件里的类别 ID（1..31 和 32），跟模型输出索引差 1，分开列出避免看混。"""
+    ids = list(range(len(names))) if ids is None else ids
+    lines = [f'{"idx":>4} {"提交ID":>6} {"class":<20} '
+             f'{"support":>12} {"P":>7} {"R":>7} {"F1":>7}']
     for i, name in enumerate(names):
-        lines.append(f'{i:>3} {name:<20} {result["support"][i]:>12} '
+        lines.append(f'{i:>4} {ids[i]:>6} {name:<20} {result["support"][i]:>12} '
                      f'{result["precision"][i]:>7.4f} {result["recall"][i]:>7.4f} '
                      f'{result["f1"][i]:>7.4f}')
     return '\n'.join(lines)

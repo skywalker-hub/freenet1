@@ -3,3 +3,6 @@
 .idea
 pavia/
 dataset2683/
+log/
+submission/
+__pycache__/

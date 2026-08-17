@@ -143,30 +143,36 @@ class RawTiff:
                 out[i] = buf.reshape(self.width, self.bands)[::col_step]
         return out
 
-    def read(self, row_start=0, row_stop=None):
-        """读取 [row_start, row_stop) 行，返回 (rows, W, C)，行序始终正确。"""
+    def read(self, row_start=0, row_stop=None, col_start=0, col_stop=None):
+        """读取 [row_start, row_stop) x [col_start, col_stop)，返回 (rows, cols, C)。
+
+        影像是 pixel-interleaved 的，一行里连续列的字节也是连续的，所以裁剪时
+        限定列范围能少读将近一半——256 宽的裁剪块只需要 29MB 而不是整行的 59MB。
+        """
         row_stop = self.height if row_stop is None else row_stop
+        col_stop = self.width if col_stop is None else col_stop
         if not (0 <= row_start < row_stop <= self.height):
             raise ValueError(f'invalid row range [{row_start}, {row_stop})')
+        if not (0 <= col_start < col_stop <= self.width):
+            raise ValueError(f'invalid col range [{col_start}, {col_stop})')
 
         if self.is_contiguous:
             mm = np.memmap(self.path, dtype=self.dtype, mode='r',
                            offset=self.data_offset, shape=self.shape)
-            return np.array(mm[row_start:row_stop])
+            return np.array(mm[row_start:row_stop, col_start:col_stop])
 
-        out = np.empty((row_stop - row_start, self.width, self.bands), dtype=self.dtype)
+        n_col = col_stop - col_start
+        out = np.empty((row_stop - row_start, n_col, self.bands), dtype=self.dtype)
         rps = self.rows_per_strip
-        first, last = row_start // rps, (row_stop - 1) // rps
+        item = self.dtype.itemsize
+        row_bytes = self.width * self.bands * item
+        px_bytes = self.bands * item
         with open(self.path, 'rb') as fh:
-            for s in range(first, last + 1):
-                fh.seek(int(self.strip_offsets[s]))
-                buf = np.frombuffer(fh.read(int(self.strip_byte_counts[s])), dtype=self.dtype)
-                rows_here = len(buf) // (self.width * self.bands)
-                buf = buf.reshape(rows_here, self.width, self.bands)
-                src_lo = max(row_start - s * rps, 0)
-                src_hi = min(row_stop - s * rps, rows_here)
-                dst_lo = s * rps + src_lo - row_start
-                out[dst_lo:dst_lo + (src_hi - src_lo)] = buf[src_lo:src_hi]
+            for i, r in enumerate(range(row_start, row_stop)):
+                s = r // rps
+                fh.seek(int(self.strip_offsets[s]) + (r % rps) * row_bytes + col_start * px_bytes)
+                buf = np.frombuffer(fh.read(n_col * px_bytes), dtype=self.dtype)
+                out[i] = buf.reshape(n_col, self.bands)
         return out
 
 
@@ -177,3 +183,54 @@ def imread(path, squeeze_single_band=True):
     if squeeze_single_band and arr.shape[2] == 1:
         arr = arr[:, :, 0]
     return arr
+
+
+# 提交文件按官方 Train_Labels 的格式写：单波段、无压缩、单 strip。
+_SAMPLE_FORMAT = {'u': 1, 'i': 2, 'f': 3}
+
+
+def imwrite(path, array):
+    """写一幅单波段无压缩 TIFF，(H, W) 二维数组。
+
+    官方标签是 int32，评测方大概率用 GDAL / tifffile / PIL 读，所以这里只写
+    基线标签必需的 11 个 tag，不带任何地理信息，避免写错元数据反而读不出来。
+    """
+    array = np.asarray(array)
+    if array.ndim != 2:
+        raise ValueError(f'imwrite 只支持二维数组，收到 {array.shape}')
+    kind = _SAMPLE_FORMAT.get(array.dtype.kind)
+    if kind is None or array.dtype.itemsize not in (1, 2, 4, 8):
+        raise ValueError(f'unsupported dtype {array.dtype}')
+
+    array = np.ascontiguousarray(array, dtype=array.dtype.newbyteorder('<'))
+    height, width = array.shape
+    data = array.tobytes()
+    # 数据紧跟 8 字节文件头，IFD 放在数据之后
+    data_offset = 8
+    ifd_offset = data_offset + len(data)
+
+    tags = [
+        (TAG_IMAGE_WIDTH, 3, 1, width),
+        (TAG_IMAGE_LENGTH, 3, 1, height),
+        (TAG_BITS_PER_SAMPLE, 3, 1, array.dtype.itemsize * 8),
+        (TAG_COMPRESSION, 3, 1, 1),
+        (262, 3, 1, 1),                      # PhotometricInterpretation = BlackIsZero
+        (TAG_STRIP_OFFSETS, 4, 1, data_offset),
+        (TAG_SAMPLES_PER_PIXEL, 3, 1, 1),
+        (TAG_ROWS_PER_STRIP, 4, 1, height),
+        (TAG_STRIP_BYTE_COUNTS, 4, 1, len(data)),
+        (TAG_PLANAR_CONFIG, 3, 1, 1),
+        (TAG_SAMPLE_FORMAT, 3, 1, kind),
+    ]
+
+    body = struct.pack('<H', len(tags))
+    for tag, dtype, count, value in sorted(tags):
+        # SHORT 存在 4 字节值域的低半部分，LONG 占满
+        payload = struct.pack('<HH', value, 0) if dtype == 3 else struct.pack('<I', value)
+        body += struct.pack('<HHI', tag, dtype, count) + payload
+    body += struct.pack('<I', 0)             # 没有下一个 IFD
+
+    with open(path, 'wb') as fh:
+        fh.write(struct.pack('<2sHI', b'II', 42, ifd_offset))
+        fh.write(data)
+        fh.write(body)

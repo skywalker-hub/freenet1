@@ -4,6 +4,7 @@
 # 别急着往全量跑。macro_F1_all 这时必然低，因为另外十几个类不在这 4 张图里。
 
 export CUDA_VISIBLE_DEVICES=0
+export OMP_NUM_THREADS=4
 export PYTHONPATH=${PYTHONPATH}:`pwd`
 config_path='freenet.freenet_1_0_hin'
 model_dir='./log/hin/sanity'
