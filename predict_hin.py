@@ -27,7 +27,7 @@ from hin.labels import DEFAULT_BAD_BANDS
 from hin.predict import TTA_CHOICES, ImageDataset, predict_prob, prob_to_submission
 from hin.score import format_report, score_arrays, train_label_to_gt
 from module import freenet_hin  # noqa: F401  导入即注册 FreeNetHIN
-from tools.rawtiff import imread, imwrite
+from tools.rawtiff import RawTiff, imread, imwrite
 
 DTYPES = {'int32': np.int32, 'uint8': np.uint8}
 
@@ -166,10 +166,15 @@ def verify(written, paths, dtype):
             raise RuntimeError(f'{name} dtype 是 {arr.dtype}，应为 {np.dtype(dtype)}')
         if arr.min() < 0 or arr.max() > 32:
             raise RuntimeError(f'{name} 取值超出 0..32：[{arr.min()}, {arr.max()}]')
+        compression = RawTiff(path).compression
+        if compression != 1:
+            raise RuntimeError(
+                f'{name} TIFF 压缩码是 {compression}，必须是 1（无压缩）。'
+                f'CodaLab 的 tifffile 没有 imagecodecs，LZW 会读失败')
         hist += np.bincount(arr.ravel().astype(np.int64), minlength=33)
     used = [c for c in range(1, 33) if hist[c]]
     total = hist[1:].sum()
-    print(f'\n自检通过：{len(written)} 张 512x512 {np.dtype(dtype)}，取值合法')
+    print(f'\n自检通过：{len(written)} 张 512x512 {np.dtype(dtype)} 无压缩 TIFF，取值合法')
     print(f'  预测里出现了 {len(used)} 个类别：{used}')
     print(f'  nodata(0) 占 {hist[0] / hist.sum():.1%}，Unknown(32) 占有效像元的 '
           f'{hist[32] / max(total, 1):.1%}')
@@ -199,6 +204,8 @@ def report(written, gt_map, gt_is_train_label):
 
 def pack(written, zip_path):
     os.makedirs(os.path.dirname(os.path.abspath(zip_path)) or '.', exist_ok=True)
+    # ZIP 容器用 deflate 没问题；里面的 TIF 必须是无压缩（Compression=1）。
+    # 评测失败过的那种 LZW 是 TIFF 编码，不是 ZIP 算法。
     with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:
         for name, path, _ in written:
             # arcname 只给文件名，保证压缩包里没有任何子目录

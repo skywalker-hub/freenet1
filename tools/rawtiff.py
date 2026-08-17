@@ -97,6 +97,7 @@ class RawTiff:
             raise RawTiffError(f'{self.path}: unsupported sample format {fmt}/{bit}')
         self.dtype = np.dtype(f'{self.byteorder}{kind}{bit // 8}')
 
+        self.compression = compression
         self.rows_per_strip = min(tags.get(TAG_ROWS_PER_STRIP, (self.height,))[0], self.height)
         self.strip_offsets = np.asarray(tags[TAG_STRIP_OFFSETS], dtype=np.int64)
         self.strip_byte_counts = np.asarray(tags[TAG_STRIP_BYTE_COUNTS], dtype=np.int64)
@@ -185,15 +186,31 @@ def imread(path, squeeze_single_band=True):
     return arr
 
 
-# 提交文件按官方 Train_Labels 的格式写：单波段、无压缩、单 strip。
+# 提交文件必须是无压缩 TIFF。CodaLab 评测端的 tifffile 没有 imagecodecs，
+# LZW（压缩码 5）会直接读失败，日志表现为「没有匹配到影像」。
 _SAMPLE_FORMAT = {'u': 1, 'i': 2, 'f': 3}
+_GDAL_NODATA = 42113
+
+
+def _ifd_payload(dtype, count, value):
+    """把 tag 的值填进 IFD 条目末尾 4 字节。count*size 必须 <= 4。"""
+    if isinstance(value, (bytes, bytearray)):
+        raw = bytes(value)
+        if len(raw) > 4:
+            raise ValueError('IFD inline value longer than 4 bytes')
+        return raw.ljust(4, b'\x00')
+    if dtype == 3:
+        return struct.pack('<HH', int(value), 0)
+    if dtype == 4:
+        return struct.pack('<I', int(value))
+    raise ValueError(f'unsupported TIFF dtype {dtype}')
 
 
 def imwrite(path, array):
     """写一幅单波段无压缩 TIFF，(H, W) 二维数组。
 
-    官方标签是 int32，评测方大概率用 GDAL / tifffile / PIL 读，所以这里只写
-    基线标签必需的 11 个 tag，不带任何地理信息，避免写错元数据反而读不出来。
+    布局跟官方 Train_Labels 一致：IFD 紧挨 8 字节文件头，像素数据在 IFD 之后，
+    Compression=1（无压缩）。不要改成 LZW——评测端 tifffile 没有 imagecodecs。
     """
     array = np.asarray(array)
     if array.ndim != 2:
@@ -201,36 +218,42 @@ def imwrite(path, array):
     kind = _SAMPLE_FORMAT.get(array.dtype.kind)
     if kind is None or array.dtype.itemsize not in (1, 2, 4, 8):
         raise ValueError(f'unsupported dtype {array.dtype}')
+    if array.shape[0] > 65535:
+        raise ValueError(f'height {array.shape[0]} 超出 SHORT RowsPerStrip 范围')
 
     array = np.ascontiguousarray(array, dtype=array.dtype.newbyteorder('<'))
     height, width = array.shape
     data = array.tobytes()
-    # 数据紧跟 8 字节文件头，IFD 放在数据之后
-    data_offset = 8
-    ifd_offset = data_offset + len(data)
+
+    n_tags = 12
+    ifd_offset = 8
+    ifd_size = 2 + 12 * n_tags + 4
+    data_offset = ifd_offset + ifd_size
 
     tags = [
         (TAG_IMAGE_WIDTH, 3, 1, width),
         (TAG_IMAGE_LENGTH, 3, 1, height),
         (TAG_BITS_PER_SAMPLE, 3, 1, array.dtype.itemsize * 8),
-        (TAG_COMPRESSION, 3, 1, 1),
+        (TAG_COMPRESSION, 3, 1, 1),          # 1 = 无压缩，禁止改成 5 (LZW)
         (262, 3, 1, 1),                      # PhotometricInterpretation = BlackIsZero
         (TAG_STRIP_OFFSETS, 4, 1, data_offset),
         (TAG_SAMPLES_PER_PIXEL, 3, 1, 1),
-        (TAG_ROWS_PER_STRIP, 4, 1, height),
+        (TAG_ROWS_PER_STRIP, 3, 1, height),  # 官方标签用 SHORT
         (TAG_STRIP_BYTE_COUNTS, 4, 1, len(data)),
         (TAG_PLANAR_CONFIG, 3, 1, 1),
         (TAG_SAMPLE_FORMAT, 3, 1, kind),
+        (_GDAL_NODATA, 2, 2, b'0\x00'),      # 与官方标签一致，nodata = "0"
     ]
 
-    body = struct.pack('<H', len(tags))
+    body = struct.pack('<H', n_tags)
     for tag, dtype, count, value in sorted(tags):
-        # SHORT 存在 4 字节值域的低半部分，LONG 占满
-        payload = struct.pack('<HH', value, 0) if dtype == 3 else struct.pack('<I', value)
-        body += struct.pack('<HHI', tag, dtype, count) + payload
-    body += struct.pack('<I', 0)             # 没有下一个 IFD
+        body += struct.pack('<HHI', tag, dtype, count)
+        body += _ifd_payload(dtype, count, value)
+    body += struct.pack('<I', 0)
+    if len(body) != ifd_size:
+        raise RuntimeError(f'IFD 大小 {len(body)}，预期 {ifd_size}')
 
     with open(path, 'wb') as fh:
         fh.write(struct.pack('<2sHI', b'II', 42, ifd_offset))
-        fh.write(data)
         fh.write(body)
+        fh.write(data)
