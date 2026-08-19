@@ -38,6 +38,12 @@ if 'adamw' not in registry.OPT:
 # data 下除 train/test 外，还会被当作验证集加载的键
 EXTRA_VAL_KEYS = ('val_line',)
 
+# --val none 时追加的配置覆盖：训练集换回全部 383 张瓦片，并关掉所有评估。
+# 划分文件只是为了留出验证数据，不验证了就没有理由把那 102 张排除在训练之外。
+FULL_DATA_OPTS = ('data.train.params.split_file', 'None',
+                  'train.eval_per_epoch', 'False',
+                  'train.eval_after_train', 'False')
+
 
 def model_of(launcher):
     model = launcher._model.module if hasattr(launcher._model, 'module') else launcher._model
@@ -141,18 +147,23 @@ def build_extra_loaders(config_path, opts):
 
 
 if __name__ == '__main__':
-    train.parser.add_argument('--single-val', action='store_true',
-                              help='只评 data.test，跳过附加验证集（自检用）')
+    train.parser.add_argument(
+        '--val', default='both', choices=('both', 'single', 'none'),
+        help='both=同域与留出航线两个验证集；single=只评 data.test（自检用）；'
+             'none=完全不验证，训练集换成全部 383 张瓦片')
     torch.backends.cudnn.benchmark = True
     args = train.parser.parse_args()
     SEED = 2333
     torch.manual_seed(SEED)
     torch.cuda.manual_seed(SEED)
 
-    extra = [] if args.single_val else build_extra_loaders(args.config_path, args.opts)
+    opts = list(args.opts or [])
+    if args.val == 'none':
+        opts += list(FULL_DATA_OPTS)
+    extra = build_extra_loaders(args.config_path, opts) if args.val == 'both' else []
     evaluate_fn = make_evaluate_fn(extra)
     train.run(config_path=args.config_path,
               model_dir=args.model_dir,
               cpu_mode=args.cpu,
               after_construct_launcher_callbacks=[lambda tl: tl.override_evaluate(evaluate_fn)],
-              opts=args.opts)
+              opts=opts)

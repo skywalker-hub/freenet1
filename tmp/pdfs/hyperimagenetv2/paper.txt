@@ -1,0 +1,448 @@
+     HyperImageNet: A Large-Scale High-Spatial-
+    Resolution Hyperspectral Imagery Classification
+                     Benchmark
+     Chuguang Zeng                         Jingtao Li                        Yinhe Liu                         Yanfei Zhong
+    Wuhan University                    Wuhan University                 Wuhan University                     Wuhan University
+  430072 Wuhan, China                430072 Wuhan, China               430072 Wuhan, China                  430072 Wuhan, China
+  zcg2025@whu.edu.cn                 JingtaoLi@whu.edu.cn              liuyinhe@whu.edu.cn                zhongyanfei@whu.edu.cn
+
+    Abstract—We present HyperImageNet, a large-scale               To bridge this semantic perception gap, we construct a large-
+benchmark for fine-grained hyperspectral land-cover                scale 𝐻2 (high spatial and high spectral resolution) benchmark
+understanding. The dataset contains 26,084 airborne                dataset named HyperImageNet. The raw imagery of this
+hyperspectral image patches with 224 spectral bands and 138        dataset is acquired by the AVIRIS-Classic and AVIRIS-NG
+fine-grained land-cover categories. Unlike existing datasets,      airborne sensors, encompassing 224 continuous spectral
+HyperImageNet provides raw imagery, pixel-level semantic           bands with a spatial resolution ranging from 0.5 to 5 meters.
+labels, and object-level instance masks, supporting both           Regarding the construction of the labeling system, we
+semantic and instance segmentation. Furthermore, we establish
+                                                                   transcend the limitations of a single data source by seamlessly
+an open-environment benchmark with strict spatial separation
+to evaluate representative methods and the HyperFree
+                                                                   fusing the annual Cropland Data Layer (CDL) product from
+foundation model. Experimental results demonstrate the             the United States Department of Agriculture (USDA) with
+effectiveness of HyperImageNet for fine-grained hyperspectral      massive crowdsourced geospatial data from Overture Maps.
+understanding and open-environment remote sensing research.        Consequently, we successfully filter and compile 26,084 high-
+                                                                   quality image patches covering 138 fine-grained land-cover
+   Keywords—hyperspectral image dataset, benchmark, fine-          subcategories. Its ultra-fine-grained characteristics provide a
+grained land-cover classification, foundation model, open-set      solid data foundation for migrating cutting-edge land-cover
+semantic segmentation.                                             recognition tasks, such as open-vocabulary classification, into
+                                                                   the hyperspectral domain.
+                     I. INTRODUCTION
+                                                                       Distinct from conventional hyperspectral datasets that
+    Hyperspectral remote sensing imagery (HSI),                    merely provide a single label modality, HyperImageNet
+characterized by continuous and fine-grained spectral features,    pioneers a trinity data structure: raw 𝐻2 imagery (TIF), pixel-
+possesses significant advantages in fields such as precise land-   level semantic labels (TIF), and object-level instance masks
+cover classification, environmental monitoring, and resource       (COCO JSON) generated via the HyperFree framework
+exploration. However, compared to the large-scale open-            followed by meticulous manual refinement and post-
+source datasets prevalent in the general computer vision           processing. This design simultaneously provides pixel-level
+domain (e.g., RGB images), high-quality hyperspectral              semantic information and object-level instance boundaries for
+datasets remain exceedingly scarce. This scarcity primarily        the same image, breaking through the monolithic task
+stems from the high acquisition costs of HSI, constraints on       dimension of prior datasets and enabling concurrent support
+spatial resolution, and the labor-intensive annotation process     for multiple complex tasks, including semantic and instance
+that heavily relies on expert knowledge. Consequently, this        segmentation. Furthermore, considering that previous
+data shortage has become a critical realistic bottleneck           hyperspectral tasks were often confined to a single-image split
+hindering the evolution of hyperspectral deep learning models,     for training and testing sets—which induces severe data
+particularly large-scale foundation models. To address this        leakage problems—this paper selects 31 representative land-
+pragmatic dilemma, contemporary research primarily follows         cover categories alongside an open unknown class containing
+three avenues: (1) continuously conducting large-scale data        multiple land-cover types. By enforcing strict physical and
+collection and open-sourcing efforts, such as HySpecNet-           spatial isolation between the training and testing sets, we
+11k[1]; (2) utilizing generative models to synthesize simulated    establish a more challenging open-environment evaluation
+data, such as HSIGene[2], though simulated data often fails to     protocol and complete preliminary benchmark testing through
+fully reconstruct the complex physical degradation processes       fine-tuning the HyperFree architecture. HyperImageNet not
+inherent in ground spectral mechanisms, thereby limiting its       only verifies that multi-tier fine-grained classification datasets
+generalizability; and (3) introducing pretrained foundation        can effectively mitigate the semantic vacuum of foundation
+models with powerful high-dimensional feature extraction and       models but also serves as a novel reference for future
+generalization capabilities, such as SpectralEarth-FM[3], to       explorations into ultra-fine-grained hyperspectral land-cover
+more efficiently exploit the potential of existing hyperspectral   recognition algorithms.
+imagery.
+    In the exploration of foundation model applications, the                          II. RELATED WORK
+recently proposed HyperFree[4] framework tailored for HSI              The advancement of the hyperspectral remote sensing
+has demonstrated outstanding zero-shot segmentation                domain is inextricably linked to the driving force of early
+performance. Nevertheless, while such models can generate          semantic segmentation datasets (summarized in Table I) [5]–[13].
+high-quality geometric segmentation masks from unlabeled           However, constrained by data acquisition platforms and
+data, their outputs are typically semantic-agnostic. This          annotation costs, existing public datasets often struggle to
+decoupling between geometric boundaries and explicit               balance data scale, spatial-spectral resolution, and annotation
+semantics severely restricts the profound application of           granularity.
+hyperspectral foundation models in specific scene-level tasks.
+      TABLE I.           COMPARISON OF HYPERSPECTRAL SEMANTIC             In contrast, the proposed HyperImageNet dataset not only
+                         SEGMENTATION DATASETS
+                                                                      boasts a massive volume of 26,084 images but also
+                  Spatial      Spectral
+                                                   No. of   No. of    successfully realizes the 𝐻2 properties, balancing a spatial
+    Dataset      Resolution     Range     Bands                       resolution of 0.5 to 5 meters with full-spectrum continuous
+                                                  Images    Classes
+                    (m)         (nm)
+                                                                      coverage from 380 to 2510 nm (across 224 bands), featuring
+ Washington                                                           138 fine-grained subcategory labels. Furthermore, to bridge
+                     \        400-2400    191       2           7
+   DC[5]
+                                                                      the semantic gap of foundation models in scene-level
+   Pavia                                                              applications, this dataset introduces a tripartite data structure
+                    1.3        430-860    103       2           9
+ University[6]                                                        comprising raw 𝐻2 imagery, pixel-level semantic labels, and
+    Pavia
+                                                                      object-level instance masks. This paired design transcends the
+                    1.3        430-860    102       4           9     single-task paradigm of previous benchmark datasets,
+   Center[6]
+                                                                      establishing a comprehensive novel benchmark for the fine-
+    Urban            2        380-2500    210       1           4     grained semantic understanding of hyperspectral scenes and
+                                                                      the rigorous evaluation of foundation models.
+    KSC[7]          18        400-2500    176       2         13              III. THE HYPERIMAGENET DATASET
+                                                                          Compared to spaceborne hyperspectral sensors, which are
+  Botswana          30        400-2500    145       3         14      susceptible to atmospheric interference and limited in spatial
+                                                                      resolution, airborne hyperspectral imaging platforms can
+    Indian                                                            provide ultra-high spatial resolution (ranging from sub-meter
+                    20        400-2500    220       1         16
+    Pines[8]                                                          to meter scales) and continuous spectra with high signal-to-
+   Salinas                                                            noise ratios while conducting large-scale observations. Such
+                    3.7       370-2480    204       1         16
+   Valley[8]                                                          high-quality 𝐻2 physical properties are prerequisites for
+                                                                      achieving ultra-fine-grained land-cover parsing in real-world
+   Houston
+   2013[9]
+                    2.5       380-1050    144       4         15      scenarios, which constitutes the core motivation for selecting
+                                                                      an airborne platform to construct our dataset. However,
+   Houston
+                     1        380-1050     48       10        20
+                                                                      building large-scale labels matching this level of precision is
+   2018[10]                                                           a highly challenging engineering endeavor. Although
+                                                                      introducing existing authoritative land-cover products (e.g.,
+  XiongAn[11]       0.5       400-1000    250       21        19      USDA CDL) and open-source crowdsourced geospatial data
+                                                                      (e.g., Overture Maps) enables the semi-automatic annotation
+  Chikusei[12]      2.5       343-1018    128       25        19      of basic polygonal and point features, the pixel-level accuracy
+                                                                      of automated labels cannot be guaranteed due to spatial offsets
+  WHU-Hi-                                                             among multi-source data and the ambiguity of fine-grained
+                   0.463      400-1000    270       1           9
+   LK[13]                                                             semantics. Therefore, to ensure the reliability of the
+                                                                      benchmark data, extensive manual verification and
+  WHU-Hi-
+   HC[13]
+                   0.109      400-1000    274       1         16      meticulous refinement were continuously invested after fusing
+                                                                      the multi-source labels. This section details the entire
+  WHU-Hi-
+                   0.043      400-1000    270       1         22      construction pipeline of HyperImageNet, encompassing the
+   HH[13]                                                             acquisition and preprocessing of airborne hyperspectral
+    WHU-                                                              imagery, the annotation strategy for the 138 multi-source fine-
+                    10        400-1000     32     7795        16      grained labels, and the generation mechanism of object-level
+    OHS[14]
+   Hyper                                                              masks.
+  ImageNet         0.5-5      380-2510    224     26084      138
+   (Ours)
+                                                                      A. Data Acquisition and Preprocessing
+    As illustrated in Table I, current datasets primarily face           The raw hyperspectral imagery of HyperImageNet is
+two major limitations. The first limitation lies in the               sourced from the Airborne Visible/Infrared Imaging
+constrained scale of image data and the inherent challenge of         Spectrometer (AVIRIS) platforms. To balance the observation
+simultaneously achieving 𝐻2 characteristics. The vast                 time span and the overall scale of the data, this dataset
+majority of classic datasets possess extremely small data             comprises two image subsets: HyperSeg-A and HyperSeg-B.
+volumes, making it difficult to support the cross-scene                   Specifically, HyperSeg-A aggregates 22,699 image
+generalization evaluation of deep learning models.                    patches acquired by the AVIRIS-Classic sensor between 2009
+Conversely, datasets that achieve a substantial scale or possess      and 2022, natively providing 224 continuous spectral bands
+high spatial resolution typically restrict their spectral coverage    across the 380-2510 nm range. HyperSeg-B contains 3,385
+to the Visible and Near-Infrared (VNIR) range, lacking the            image patches collected by the next-generation AVIRIS-NG
+continuous spectral features of the Short-Wave Infrared               sensor in 2023, featuring up to 425 native spectral bands.
+(SWIR) bands.                                                         Considering the strict requirements of deep learning models
+    The second limitation involves the inadequate granularity         regarding input feature dimensions, we implemented a cross-
+of classification labels. The total number of categories in           sensor spectral alignment strategy during the preprocessing
+mainstream datasets generally does not exceed 20, primarily           stage to guarantee consistency in the spectral feature space
+targeting macroscopic land-cover types. This coarse                   across the entire dataset. Based on the principle of central
+categorization fails to fully leverage the inherent advantages        wavelength matching, we extracted 224 bands from the 425
+of hyperspectral imagery for fine-grained land-cover                  bands of AVIRIS-NG that highly correspond to those of
+classification.                                                       AVIRIS-Classic. Through unified preprocessing, these
+26,084 images spanning different years and sensors were
+successfully aligned in their spectral bands, collaboratively
+building an 𝐻2 base imagery library with both a large time
+span and high spatial resolutions of 0.5 to 5 meters.
+B. Fine-Grained Labeling Strategy
+    The core challenge in constructing the 138 fine-grained
+subcategory labels lies in the fact that a single data source can
+hardly maintain extremely high semantic granularity
+simultaneously across vast natural landscapes and complex
+urban scenes. Consequently, we adopted a differentiated
+multi-source label fusion strategy based on the image
+acquisition years: for the HyperSeg-A subset, which lacks the
+support of early high-precision crowdsourced data, the
+annual USDA CDL raster product serves as the label
+foundation; for the HyperSeg-B subset, Overture Maps full-
+pixel sampling point data is additionally introduced to
+establish a semantically complementary annotation system.
+    Regarding multi-source data fusion and category
+establishment, the CDL and Overture Maps form a
+complementary advantage based on the physical features of
+land covers. The CDL data exhibits extreme professionalism
+in classifying natural and agricultural vegetation such as crop
+subcategories. This study fully retains these fine-grained
+classifications, which possess significant potential for
+hyperspectral discrimination. However, the label
+differentiation of urban scenes in CDL, based on                        Fig. 1. The hierarchical classification system of HyperImagenet
+Development Intensity, often lacks significant variations in
+hyperspectral features. To address this limitation, we initially        As shown in Fig. 1, to systematically manage these 138
+merged these categories weakly correlated with hyperspectral        ultra-fine-grained categories, HyperImageNet establishes a
+tasks, and then introduced Overture Maps sampling point             rigorous hierarchical land-cover taxonomy. At the macro
+data to semantically refine the reconstructed category labels.      level, the dataset comprises 11 major categories: cropland,
+Abundant in crowdsourced geographic information, Overture           impervious surfaces, forests, shrublands, grasslands,
+Maps can provide higher-quality micro-category annotations          wetlands, water bodies, barren land, and snow. At the
+in urban scenes (e.g., specific roof materials and subdivided       subcategory level, it demonstrates extreme potential for
+road networks), effectively filling the gap of CDL concerning       granular recognition, encompassing not only over 80 specific
+urban hyperspectral properties. During the system                   crop species (e.g., cucumbers, tomatoes, strawberries) and
+construction, we strictly implemented the core principle of         tree components of different phenological traits (e.g.,
+"fine-granularity first." To ensure the evaluation potential of     evergreen forests, mixed forests), but also precise
+hyperspectral data in cutting-edge tasks like long-tail             architectural materials (e.g., solar panels, metal roofs),
+distribution and rare land-cover recognition, we insisted on        artificial facilities (e.g., artificial turf), and distinctions in
+retaining categories with extremely low percentages of valid        water properties (e.g., freshwater and saltwater). This
+pixels as independent classes.                                      taxonomic architecture not only preserves the semantic
+    Regarding the spatial alignment mechanism of multi-             coherence of macro-ecology but also effectively leverages
+source labels, benefiting from the orthorectified raw imagery       the natural spectral advantages of hyperspectral data in fine-
+and data information tables provided by the AVIRIS platform,        grained land-cover classification.
+we first performed matching via a latitude-longitude grid and       C. Object-Level Mask Generation
+subsequently mapped the JSON sampling points of Overture
+                                                                        To construct the aforementioned tripartite data structure of
+Maps to the corresponding raster pixels, thereby establishing
+                                                                    "raw imagery - category labels - segmentation masks" and
+an initial fine-grained label library covering the entire scene.
+                                                                    subsequently bridge the semantic gap of foundation models in
+Ultimately, following meticulous manual review of the               scene applications, this paper employed the HyperFree
+single-class labels for each image, 138 fine-grained                framework to generate object-level segmentation masks
+subcategory labels highly consistent with hyperspectral             aligned with the pixel-level labels. Given that HyperFree
+perception mechanisms were established.                             possesses a promptable segmentation architecture similar to
+                                                                    the Segment Anything Model (SAM)[15], we systematically
+                                                                    fine-tuned its core hyperparameters tailored to the complex
+                                                                    spatial-spectral characteristics of AVIRIS imagery.
+                                                                    Specifically, through iterative scene-adaptive testing, we
+                                                                    primarily optimized the model's Prediction IoU Threshold,
+                                                                    Stability Score Threshold, and the feature input range for
+                                                                    specific bands, thereby obtaining the preliminary
+                                                                    segmentation masks.
+     However, to capture fine-grained land covers as                                          No. of    No. of      No. of    No. of
+                                                                          ID      Class       Train     Train        Test      Test
+comprehensively as possible, the relatively low prediction                                   Images     Pixels     Images     Pixels
+thresholds set in the initial processing inevitably induced a                  Deciduous
+massive adjacent adhesion phenomenon among small-area                     9                    52      3,239,035     22      1,159,919
+                                                                                 Forest
+masks. To tackle this issue, we introduced a targeted                     10
+                                                                               Evergreen
+                                                                                               49      3,026,683     21      1,112,395
+morphological post-processing mechanism. First, a                                Forest
+morphological opening operation was applied to effectively                       Mixed
+                                                                          11                   40      2,016,434     17      726,688
+                                                                                 Forest
+detach the adhered mask boundaries; subsequently, precise
+                                                                          12   Shrubland       24      2,043,253     10      846,451
+filtering and cleaning were conducted in conjunction with
+                                                                          13      Corn         12       733,831       5      371,827
+connected component area thresholds tailored to the
+characteristics of fragmented isolated noise pixels. Refined              14     Cotton        11       283,399       4       41,455
+through this pipeline, the final generated COCO-format masks              15    Soybean         9       349,742       4      141,073
+effectively eliminated noise while preserving high-precision              16   Sunflower        7       115,121       3       63,639
+geometric boundary demarcations. An illustrative                          17     Barley         7        87,516       3       69,061
+visualization of the tripartite data is presented in Fig. 2 below.               Winter
+                                                                          18                   9       455,581       4       265,808
+                                                                                 Wheat
+                                                                          19     Alfalfa       21       978,140       9       319,994
+                                                                          20    Dry Bean       20       133,581       9        90,960
+                                                                          21     Tomato         9       629,884       3       178,979
+                                                                          22     Fallow        43      2,030,482     16       743,842
+                                                                          23   Strawberry       8        63,243       3        35,567
+                                                                          24      Peach         8      1,042,367      3       283,520
+                                                                          25      Grape        27      1,514,226     14       666,061
+                                                                          26      Citrus       15       125,960       6        46,526
+                                                                          27     Orange        46      3,110,256     22      1,380,311
+                                                                          28      Olive         8       247,507       3        84,796
+  Fig. 2. Raw imagery - category labels - segmentation masks example
+                                                                          29    Almond         39      2,370,228     16       969,074
+             IV. BENCHMARK EVALUATION                                     30     Walnut        10       502,412       3       105,516
+                                                                          31    Pistachio      11       711,910       5       367,959
+    To verify the application potential of HyperImageNet in               32   Unknown          /           /        84       623,449
+real-world complex scenarios and systematically evaluate the
+                                                                           As shown in Table Ⅱ, regarding the category system and
+performance boundaries of existing hyperspectral
+                                                                       data partitioning, this benchmark constructs an open-
+segmentation algorithms, we extracted a high-quality subset
+                                                                       environment evaluation framework comprising 31 known
+from the constructed dataset to design the following
+                                                                       classes + 1 unknown class. The 31 known classes cover water
+benchmark. Distinct from the common single-image splitting
+                                                                       bodies, impervious surfaces, barren land, snow, woody
+strategy in traditional hyperspectral classification tasks, this
+                                                                       wetlands, herbaceous wetlands, grasslands, fallow land, and
+benchmark strictly adheres to the principle of spatial physical
+                                                                       over 20 fine-grained agricultural and forestry crops (such as
+isolation to thoroughly eliminate the Data Leakage problem
+                                                                       typical categories like corn, evergreen forests, grapes, and
+caused by spatial contexts during model training.
+                                                                       pistachios). The 32nd class serves as the "Unknown" category
+A. Experimental Setup and Dataset Partitioning                         in the open environment. To ensure the absolute objectivity of
+   From the vast image library of HyperImageNet, we                    the open-set evaluation, this category remains completely
+meticulously selected 562 high-quality 𝐻2 (high spatial and            invisible to the models during the training phase, implicitly
+high spectral resolution) image patches characterized by               encompassing 21 specific unseen subcategories (e.g., specific
+highly complex scenes and multi-tier landform features as the          types of rice, etc.).
+benchmark subset. This subset retains the original 224 spectral            To guarantee the fairness and generalization reliability of
+bands and spatial resolutions ranging from 0.5 to 5 meters.            the evaluation results, the 562 images are strictly divided into
+                                                                       a training set (383 images) and a testing set (179 images) at a
+ TABLE II.           STATISTICAL INFORMATION OF THE 𝐻 2 FINE-GRAINED   ratio of approximately 7:3. The training and testing sets are
+                          CLASSIFICATION DATASET
+                                                                       completely independent in geographic space, demanding that
+                           No. of    No. of      No. of    No. of      the models possess genuine generalization capabilities under
+   ID        Class         Train     Train        Test      Test       the interference of unknown spatial regions and unseen land
+                          Images     Pixels     Images     Pixels
+   0     Unlabeled           /         /           /          /
+                                                                       covers.
+   1       Water            28      220,328       12       82,254      B. Closed-Set Binary Segmentation Benchmark
+        Impervious
+   2
+          Surface
+                            28      301,412       12      143,123          To comprehensively evaluate the feature extraction limits
+   3      Barren             7      720,917       3        41,151
+                                                                       of mainstream deep learning models on singular hyperspectral
+   4       Snow              8      247,846       3       101,209
+                                                                       land covers, and to verify the dataset's efficacy in bridging the
+          Woody
+                                                                       semantic gap of foundation models, we first constructed an
+   5                        49      2,620,751     21      638,403      independent One-vs-Rest Binary Segmentation benchmark
+          Wetland
+        Herbaceous                                                     targeting the 31 known classes. In this track, we selected 6
+   6                        41      2,555,855     17      1,075,456
+          Wetland                                                      representative baseline methods for comparison, including
+   7     Grassland          46      2,563,866     20      1,063,724    classic Convolutional Neural Networks (CNN[16], UNet[17]), a
+   8     Other Hay          19       300,771       7       114,024     hybrid model combining spatial-spectral features
+                                                                       (HybridSN[18]),      a     Transformer-based         architecture
+(TransUNet[19]), a deep network explicitly designed for full-      C. Semantic Segmentation Benchmark in Open
+image hyperspectral semantic segmentation (FreeNet[20]), and           Environments
+a hyperspectral foundation model (our fine-tuned HyperFree).           Real-world remote sensing application environments are
+The evaluation metrics employed are the F1-score for each          frequently open and fraught with unknowns. However,
+category and the mean F1-score (mF1).                              traditional closed-set segmentation networks (such as the
+                                                                   previously tested CNN, UNet, and TransUNet) solidify the
+ TABLE III.     F1-SCORE COMPARISONS OF THE 6 METHODS ACROSS
+                 THE 31 FINE-GRAINED CATEGORIES                    output dimensions of their classification heads by design,
+                                                                   naturally lacking the capability to handle the "Unknown
+                                                         Hyper     Class." When confronted with the 32nd open land cover, they
+                           Free     Hybrid     Trans
+ ID    CNN       UNet                                    Free
+                           Net       SN        UNet
+                                                        (Ours)     inevitably and forcibly misclassify it as one of the 31 known
+  1    0.8513   0.8559    0.8596    0.8541    0.8488    0.9054     classes.
+  2    0.3468   0.4058    0.3698    0.4169    0.3005    0.4293         Benefiting from the Prototype Learning mechanism—
+  3    0.2529   0.6523    0.6339    0.2851    0.5165    0.3375     which mimics visual open-vocabulary tasks introduced during
+  4    0.4450   0.6406    0. 5564   0.5108    0.6426    0.6525     the fine-tuning phase—the fine-tuned HyperFree framework
+  5    0.5354   0.5655    0.5665    0.5667    0.5569    0.5776     emerges as the sole foundation model in this test capable of
+  6    0.4360   0. 4373   0.4635    0.4388    0.4787    0.4898     Open-Set Recognition in open environments. It must be
+  7    0.0000   0.5820    0.5826    0.5820    0.6284    0.5852     particularly emphasized that, to objectively evaluate the true
+  8    0.2523   0.4330    0.3328    0.3991    0.4251    0.4655     performance of the models during full-image inference, this
+  9    0.5078   0.5932    0.5776    0.5355    0.5503    0.5957     track switches the task paradigm to a 32-class joint
+ 10    0.5633   0.5945    0.5899    0.5871    0.5929    0.5975     classification encompassing the unknown class. Under this
+ 11    0.4041   0.4111    0.4188    0.4170    0.4176    0.4201
+                                                                   paradigm, severe feature boundary squeezing exists among
+                                                                   the categories. The model must precisely delineate the
+ 12    0.6647   0.6786    0.6746    0.6763    0.6782    0.6917
+                                                                   mutually exclusive boundaries of unknown features without
+ 13    0.5230   0.5274    0.6351    0.5372    0.5329    0.5802
+                                                                   sacrificing the recall rate of known classes. Its optimization
+ 14    0.2935   0.3362    0.6372    0.2374    0.3846    0.4221
+                                                                   space is fundamentally distinct from closed-set binary
+ 15    0.4318   0.4312    0.5004    0.5041    0.5820    0.5222     segmentation; thus, the absolute numerical values of the two
+ 16    0.5275   0.6500    0.6026    0.6478    0.6413    0.6916     are not directly comparable.
+ 17    0.4293   0.5146    0.5539    0.4072    0.4959    0.5264
+ 18    0.3957   0.4465    0.4907    0.4153    0.4236    0.4469     TABLE IV.      PERFORMANCE COMPARISON (MF1) ACROSS CLOSED-SET
+ 19    0.4099   0.4220    0.5055    0.3990    0.4816    0.4677                             AND OPEN-SET
+ 20    0.0000   0.2354    0.1740    0.2403    0.2313    0.2419                       Methods                         mF1
+ 21    0.6602   0.7401    0.7401    0.6923    0.7348    0.7423
+                                                                                                CNN                 0.4190
+ 22    0.4536   0.4758    0.5769    0.4604    0.4501    0.4982
+ 23    0.0450   0.2621    0.1729    0.1908    0.2538    0.2884                                  UNet                0.4911
+ 24    0.5466   0.5655    0.7055    0.5502    0.5486    0.5584                                 FreeNet              0.4964
+                                                                     Closed-Set
+ 25    0.3251   0.3299    0.5590    0.4269    0.3620    0. 4295        (1-31)               HybridSN                0.4755
+ 26    0.0005   0.0000    0.1013    0.0031    0.0000    0.2853
+ 27    0.5755   0.5954    0.6308    0.5853    0.5945    0.6069                             TransUNet                0.5043
+ 28    0.4288   0.4753    0.4995    0.4388    0.5262    0.5632                           HyperFree(Ours)            0.5176
+ 29    0.5677   0.5825    0.4708    0.5360    0.5665    0.5876        Open Set
+                                                                                         HyperFree(Ours)            0. 3594
+ 30    0.4515   0.5123    0.4653    0.4829    0.5065    0.5137         (1-32)
+ 31    0.6635   0.7091    0.6678    0.7171    0.6806    0.7555
+    Table Ⅲ details the F1-score comparisons of the 6                  In this highly challenging open-environment evaluation,
+methods across the 31 fine-grained categories. To intuitively      the HyperFree model, fine-tuned with only limited
+display the performance hierarchy of each model, the table         supervision signals, achieved a Macro F1-score of 35.94% on
+applies a red background to the highest accuracy in each           the 1-32 class joint classification task (detailed category
+column (i.e., each category), a yellow background for the          metrics are presented in Table Ⅳ). This authentic baseline
+second-highest, and a blue background for the lowest.              result—which harbors immense room for improvement—not
+    From the quantitative results, it is clearly observable that   only proves that HyperImageNet can substantially bridge the
+the HyperFree model demonstrates an overwhelming                   semantic gap of hyperspectral foundation models, but also
+advantage, achieving optimal (red) or suboptimal (yellow)          profoundly reveals the immense challenge and future research
+segmentation accuracies in the vast majority of categories         potential inherent in the task of hyperspectral open-
+(e.g., water bodies, snow, herbaceous wetlands, soybeans)          environment segmentation.
+with no bottleneck categories performing at the bottom (blue).
+Particularly in the classification of fine-grained crops (e.g.,                         V. CONCLUSION
+winter wheat, barley) and forests of different phenological           To address the semantic perception gap of hyperspectral
+traits (e.g., evergreen forests, mixed forests) where spectral     foundation models in complex scene applications and the lack
+features are highly prone to confusion, benefiting from the        of fine-grained benchmarks, this paper constructs
+powerful high-dimensional spectral feature representation          HyperImageNet, a large-scale 𝐻2 (high spatial and high
+capability of the foundation model, HyperFree significantly        spectral resolution) remote sensing dataset. This dataset not
+outperforms traditional closed-set architectures such as UNet,     only encompasses 26,084 image patches but also makes a
+HybridSN, and FreeNet.                                             breakthrough by establishing a fine-grained label taxonomy
+                                                                   covering 138 subcategories. By providing a tripartite data
+structure of "raw imagery - semantic labels - object masks,"                  [9]  Debes, C., Merentitis, A., Heremans, R., Hahn, J., Frangiadakis, N.,
+HyperImageNet effectively supports the integration of pixel-                       van Kasteren, T., Liao, W., Bellens, R., Pizurica, A., Gautama, S.,
+                                                                                   Philips, W., Prasad, S., Du, Q., & Pacifici, F. (2014). Hyperspectral and
+level semantics and object-level geometric topologies.                             LiDAR Data Fusion: Outcome of the 2013 GRSS Data Fusion Contest.
+Furthermore, open-environment benchmark evaluations based                          IEEE Journal of Selected Topics in Applied Earth Observations and
+on strict spatial physical isolation demonstrate that current                      Remote Sensing, 7(6), 2405-2418. https://doi.org/10.1109/JSTARS.
+mainstream hyperspectral feature representation paradigms                          2014.2305441
+face genuine generalization challenges under ultra-fine-                      [10] Saurabh Prasad, Bertrand Le Saux, Naoto Yokoya, Ronny Hansch,
+grained classification and the interference of unknown                             "2018 IEEE GRSS Data Fusion Challenge – Fusion of Multispectral
+                                                                                   LiDAR and Hyperspectral Data", IEEE Dataport, December 18, 2020,
+categories. The open-sourcing of this dataset aims to provide                      doi:10.21227/jnh9-nz89
+a solid data infrastructure for long-tail distribution learning,              [11] Aerial hyperspectral remote sensing classification dataset of Xiongan
+open-environment perception, and the evaluation of multi-                          New Area (Matiwan Village). (2020). In National Remote Sensing
+task foundation models in the hyperspectral domain, thereby                        Bulletin 24 (11), 1299-1306, 2020.
+propelling the advancement of intelligent land-cover parsing                  [12] Yokoya, Naoto & Iwasaki, Akira. (2016). Airborne hyperspectral data
+technologies.                                                                      over Chikusei.
+                                                                              [13] Y. Zhong, X. Hu, C. Luo, X. Wang, J. Zhao, and L. Zhang, “Whu- hi:
+                             REFERENCES                                            Uav-borne hyperspectral with high spatial resolution (h2) benchmark
+                                                                                   datasets and classifier for precise crop identification based on deep
+[1]   Fuchs M H P, Demir B. Hyspecnet-11k: A large-scale hyperspectral
+                                                                                   convolutional neural network with crf,” Remote Sensing of
+      dataset for benchmarking learning-based hyperspectral image
+                                                                                   Environment, vol. 250, p. 112012, 2020.
+      compression methods[C]//IGARSS 2023-2023 IEEE International
+      Geoscience and Remote Sensing Symposium. IEEE, 2023: 1779-1782.         [14] Li, Jiayi & Huang, Xin & Tu, Lilin. (2022). WHU-OHS: A benchmark
+                                                                                   dataset for large-scale Hersepctral Image classification. International
+[2]   Pang, Li & Cao, Xiangyong & Tang, Datao & Shuang, Xu & Bai,
+                                                                                   Journal of Applied Earth Observation and Geoinformation. 113.
+      Xueru & Zhou, Feng & Meng, Deyu. (2025). HSIGene: A Foundation
+                                                                                   103022. 10.1016/j.jag.2022.103022.
+      Model for Hyperspectral Image Generation. IEEE transactions on
+      pattern analysis and machine intelligence. PP. 10.1109/TPAMI.           [15] Kirillov A, Mintun E, Ravi N, et al. Segment anything[C]//Proceedings
+      2025.3610927.                                                                of the IEEE/CVF international conference on computer vision. 2023:
+                                                                                   4015-4026.
+[3]   Braham N A A, Banze A, Albrecht C M, et al. SpectralEarth-FM:
+      Bringing Hyperspectral Imagery into Multimodal Earth Observation        [16] Y. Lecun, L. Bottou, Y. Bengio and P. Haffner, "Gradient-based
+      Pretraining[J]. arXiv preprint arXiv:2605.21075, 2026.                       learning applied to document recognition," in Proceedings of the IEEE,
+                                                                                   vol. 86, no. 11, pp. 2278-2324, Nov. 1998, doi: 10.1109/5.726791.
+[4]   Li J, Liu Y, Wang X, et al. HyperFree: A channel-adaptive and tuning-
+      free foundation model for hyperspectral remote sensing                  [17] Ronneberger O, Fischer P, Brox T. U-net: Convolutional networks for
+      imagery[C]//Proceedings of the Computer Vision and Pattern                   biomedical image segmentation[C]//International Conference on
+      Recognition Conference. 2025: 23048-23058.                                   Medical image computing and computer-assisted intervention. Cham:
+                                                                                   Springer international publishing, 2015: 234-241.
+[5]   Landgrebe, David. (2002). Hyperspectral image data analysis. Signal
+      Processing Magazine, IEEE. 19. 17 - 28. 10.1109/79.974718.              [18] S. K. Roy, G. Krishna, S. R. Dubey and B. B. Chaudhuri, "HybridSN:
+                                                                                   Exploring 3-D–2-D CNN Feature Hierarchy for Hyperspectral Image
+[6]   Gamba, P. A collection of data for urban area characterization. In
+                                                                                   Classification," in IEEE Geoscience and Remote Sensing Letters, vol.
+      Proceedings of the IEEE International Geoscience and Remote Sens.
+                                                                                   17, no. 2, pp. 277-281, Feb. 2020, doi: 10.1109/LGRS.2019.2918719.
+      Symposium, Anchorage, AK, USA, 20–24 September 2004; pp. 69–72.
+                                                                              [19] Chen, Jieneng & Lu, Yongyi & Yu, Qihang & Luo, Xiangde & Adeli,
+[7]   Ham, J., Chen, Y. C., Crawford, M. M., & Ghosh, J. (2005).
+                                                                                   Ehsan & Wang, Yan & Lu, Le & Yuille, Alan & Zhou, Yuyin. (2021).
+      Investigation of the random forest framework for classification of
+                                                                                   TransUNet: Transformers Make Strong Encoders for Medical Image
+      hyperspectral data. IEEE Transactions on Geoscience and Remote
+                                                                                   Segmentation. 10.48550/arXiv.2102.04306.
+      Sensing, 43(3), 492-501.
+                                                                              [20] Zheng Z, Zhong Y, Ma A, et al. FPGA: Fast patch-free global learning
+[8]   Baumgardner, M. F., Biehl, L. L., & Landgrebe, D. A. (2015). 220
+                                                                                   framework for fully end-to-end hyperspectral image classification[J].
+      Band AVIRIS Hyperspectral Image Data Set: June 12, 1992 Indian
+                                                                                   IEEE Transactions on Geoscience and Remote Sensing, 2020, 58(8):
+      Pine Test Site 3 [Dataset]. Purdue University Research Repository.
+                                                                                   5612-5626.
+      https://doi.org/10.4231/R7RX991C
+
